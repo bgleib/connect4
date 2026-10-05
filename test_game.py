@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import random
 
+import pygame
+
 from ai import choose_column, choose_column_kids
 from game import Board, Player
+from main import key_to_column
 
 
 def test_horizontal_win() -> None:
@@ -140,6 +143,23 @@ def test_kids_plays_as_red_takes_win() -> None:
     assert choose_column_kids(board, Player.RED, rng=_AlwaysNotice()) == 3
 
 
+def test_key_to_column_mapping() -> None:
+    # Standard top row numbers 1..7 -> cols 0..6
+    for i in range(1, 8):
+        key = getattr(pygame, f"K_{i}")
+        assert key_to_column(key) == i - 1
+
+    # Keypad numbers 1..7 -> cols 0..6
+    for i in range(1, 8):
+        key = getattr(pygame, f"K_KP{i}")
+        assert key_to_column(key) == i - 1
+
+    # Unmapped keys (0, 8, letters, etc.)
+    assert key_to_column(pygame.K_0) is None
+    assert key_to_column(pygame.K_8) is None
+    assert key_to_column(pygame.K_a) is None
+
+
 if __name__ == "__main__":
     test_horizontal_win()
     test_vertical_win()
@@ -152,4 +172,5 @@ if __name__ == "__main__":
     test_kids_notices_horizontal_block()
     test_ai_plays_as_red_takes_win()
     test_kids_plays_as_red_takes_win()
+    test_key_to_column_mapping()
     print("logic tests passed")

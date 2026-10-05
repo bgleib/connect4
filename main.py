@@ -39,6 +39,27 @@ MENU_BUTTON_MODES = {
     "multi": GameMode.TWO_PLAYER,
 }
 
+KEY_TO_COL = {
+    pygame.K_1: 0,
+    pygame.K_2: 1,
+    pygame.K_3: 2,
+    pygame.K_4: 3,
+    pygame.K_5: 4,
+    pygame.K_6: 5,
+    pygame.K_7: 6,
+    pygame.K_KP1: 0,
+    pygame.K_KP2: 1,
+    pygame.K_KP3: 2,
+    pygame.K_KP4: 3,
+    pygame.K_KP5: 4,
+    pygame.K_KP6: 5,
+    pygame.K_KP7: 6,
+}
+
+
+def key_to_column(key: int) -> int | None:
+    return KEY_TO_COL.get(key)
+
 
 def ease_out_cubic(t: float) -> float:
     t = max(0.0, min(1.0, t))
@@ -158,11 +179,20 @@ def run() -> None:
                         start_vs_ai(go_first=False)
                     elif event.key in (pygame.K_m, pygame.K_BACKSPACE):
                         view = Screen.MENU
-                elif view is Screen.PLAY and event.key == pygame.K_r:
-                    reset_match()
-                elif view is Screen.PLAY and event.key == pygame.K_m:
-                    view = Screen.MENU
-                    reset_match()
+                elif view is Screen.PLAY:
+                    col = key_to_column(event.key)
+                    if col is not None:
+                        if (
+                            animation is None
+                            and not game_over
+                            and not (mode.vs_ai and current is ai_player)
+                        ):
+                            animation = start_drop(board, col, current)
+                    elif event.key == pygame.K_r:
+                        reset_match()
+                    elif event.key == pygame.K_m:
+                        view = Screen.MENU
+                        reset_match()
             elif event.type == pygame.MOUSEMOTION:
                 hover_col = column_from_x(event.pos[0])
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
