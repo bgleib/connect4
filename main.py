@@ -23,25 +23,8 @@ from renderer import Renderer, cell_center, column_from_x
 
 class Screen(Enum):
     MENU = auto()
+    ORDER_SELECT = auto()
     PLAY = auto()
-
-
-class GameMode(Enum):
-    KIDS = auto()
-    CLASSIC = auto()
-    TWO_PLAYER = auto()
-
-    @property
-    def vs_ai(self) -> bool:
-        return self is not GameMode.TWO_PLAYER
-
-    @property
-    def ai_label(self) -> str | None:
-        if self is GameMode.KIDS:
-            return "Kids AI"
-        if self is GameMode.CLASSIC:
-            return "AI"
-        return None
 
 
 MENU_KEYS = {
@@ -102,10 +85,14 @@ def run() -> None:
 
     view = Screen.MENU
     mode = GameMode.TWO_PLAYER
+    pending_mode: GameMode | None = None
+    human_player = Player.RED
+    ai_player = Player.YELLOW
     board = Board()
     current = Player.RED
     hover_col: int | None = None
     menu_hover: str | None = None
+    order_hover: str | None = None
     animation: DropAnimation | None = None
     last_result: MoveResult | None = None
     game_over = False
@@ -113,6 +100,7 @@ def run() -> None:
     pulse_ms = 0.0
     running = True
     menu_buttons: dict[str, pygame.Rect] = {}
+    order_buttons: dict[str, pygame.Rect] = {}
 
     def reset_match() -> None:
         nonlocal board, current, animation, last_result, game_over, ai_delay_ms
@@ -123,9 +111,26 @@ def run() -> None:
         game_over = False
         ai_delay_ms = 0.0
 
-    def begin_game(selected: GameMode) -> None:
-        nonlocal mode, view
-        mode = selected
+    def select_mode(selected: GameMode) -> None:
+        nonlocal mode, pending_mode, view
+        if selected.vs_ai:
+            pending_mode = selected
+            view = Screen.ORDER_SELECT
+        else:
+            mode = selected
+            view = Screen.PLAY
+            reset_match()
+
+    def start_vs_ai(go_first: bool) -> None:
+        nonlocal mode, human_player, ai_player, view
+        assert pending_mode is not None
+        mode = pending_mode
+        if go_first:
+            human_player = Player.RED
+            ai_player = Player.YELLOW
+        else:
+            human_player = Player.YELLOW
+            ai_player = Player.RED
         view = Screen.PLAY
         reset_match()
 
@@ -140,9 +145,19 @@ def run() -> None:
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    running = False
+                    if view is Screen.ORDER_SELECT:
+                        view = Screen.MENU
+                    else:
+                        running = False
                 elif view is Screen.MENU and event.key in MENU_KEYS:
-                    begin_game(MENU_KEYS[event.key])
+                    select_mode(MENU_KEYS[event.key])
+                elif view is Screen.ORDER_SELECT:
+                    if event.key == pygame.K_1:
+                        start_vs_ai(go_first=True)
+                    elif event.key == pygame.K_2:
+                        start_vs_ai(go_first=False)
+                    elif event.key in (pygame.K_m, pygame.K_BACKSPACE):
+                        view = Screen.MENU
                 elif view is Screen.PLAY and event.key == pygame.K_r:
                     reset_match()
                 elif view is Screen.PLAY and event.key == pygame.K_m:
@@ -156,12 +171,20 @@ def run() -> None:
                         if rect.collidepoint(event.pos):
                             selected = MENU_BUTTON_MODES.get(key)
                             if selected is not None:
-                                begin_game(selected)
+                                select_mode(selected)
+                            break
+                elif view is Screen.ORDER_SELECT:
+                    for key, rect in order_buttons.items():
+                        if rect.collidepoint(event.pos):
+                            if key == "first":
+                                start_vs_ai(go_first=True)
+                            elif key == "second":
+                                start_vs_ai(go_first=False)
                             break
                 elif (
                     animation is None
                     and not game_over
-                    and not (mode.vs_ai and current is Player.YELLOW)
+                    and not (mode.vs_ai and current is ai_player)
                 ):
                     col = column_from_x(event.pos[0])
                     if col is not None:
@@ -178,15 +201,26 @@ def run() -> None:
             pygame.display.flip()
             continue
 
-        thinking = mode.vs_ai and current is Player.YELLOW and animation is None and not game_over
+        if view is Screen.ORDER_SELECT:
+            order_hover = None
+            for key, rect in order_buttons.items():
+                if rect.collidepoint(mouse_pos):
+                    order_hover = key
+                    break
+            renderer.draw_background()
+            order_buttons = renderer.draw_order_menu(pending_mode, order_hover)
+            pygame.display.flip()
+            continue
+
+        thinking = mode.vs_ai and current is ai_player and animation is None and not game_over
         if thinking:
             ai_delay_ms += dt_ms
             if ai_delay_ms >= AI_THINK_DELAY_MS:
                 if mode is GameMode.KIDS:
-                    ai_col = choose_column_kids(board, Player.YELLOW)
+                    ai_col = choose_column_kids(board, ai_player)
                 else:
-                    ai_col = choose_column(board, Player.YELLOW)
-                animation = start_drop(board, ai_col, Player.YELLOW)
+                    ai_col = choose_column(board, ai_player)
+                animation = start_drop(board, ai_col, ai_player)
                 ai_delay_ms = 0.0
 
         drop_y: float | None = None
@@ -203,7 +237,7 @@ def run() -> None:
                 animation = None
                 drop_y = None
 
-        human_turn = not (mode.vs_ai and current is Player.YELLOW)
+        human_turn = not (mode.vs_ai and current is ai_player)
         renderer.draw_background()
         renderer.draw_header(
             current=current if not (last_result and last_result.is_win) else last_result.player,
@@ -211,6 +245,7 @@ def run() -> None:
             winner=last_result.player if last_result and last_result.is_win else None,
             ai_label=mode.ai_label,
             thinking=thinking and animation is None,
+            human_player=human_player,
         )
         renderer.draw_board(
             board=board,
