@@ -105,9 +105,9 @@ class Renderer:
         label = self.body_font.render(status, True, color)
         self.screen.blit(label, label.get_rect(center=(WINDOW_WIDTH // 2, 78)))
 
-        hint_text = "Click a column  ·  R replay  ·  M menu  ·  Esc quit"
+        hint_text = "Click or press 1-7  ·  R replay  ·  M menu  ·  Esc quit"
         hint = self.small_font.render(hint_text, True, MUTED)
-        self.screen.blit(hint, hint.get_rect(center=(WINDOW_WIDTH // 2, 112)))
+        self.screen.blit(hint, hint.get_rect(center=(WINDOW_WIDTH // 2, 104)))
 
         if not game_over:
             pygame.draw.circle(self.screen, color, (WINDOW_WIDTH // 2 - 150, 78), 10)
@@ -211,6 +211,12 @@ class Renderer:
         )
         pygame.draw.rect(self.screen, BOARD_BLUE_DARK, board_rect, border_radius=28)
         pygame.draw.rect(self.screen, BOARD_BLUE, board_rect.inflate(-10, -10), border_radius=22)
+
+        # Draw subtle column numbers above each column
+        for col in range(COLS):
+            col_x = BOARD_PADDING + col * CELL_SIZE + CELL_SIZE // 2
+            num_surf = self.small_font.render(str(col + 1), True, MUTED)
+            self.screen.blit(num_surf, num_surf.get_rect(center=(col_x, HEADER_HEIGHT - 18)))
 
         landing_row = board.next_open_row(hover_col) if hover_col is not None and not animating else None
         if hover_col is not None and landing_row is not None:
