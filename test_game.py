@@ -5,7 +5,7 @@ import random
 import pygame
 
 from ai import choose_column, choose_column_kids
-from game import Board, Player
+from game import Board, Player, ScoreTracker
 from main import key_to_column
 
 
@@ -143,6 +143,30 @@ def test_kids_plays_as_red_takes_win() -> None:
     assert choose_column_kids(board, Player.RED, rng=_AlwaysNotice()) == 3
 
 
+def test_score_tracker() -> None:
+    tracker = ScoreTracker()
+    assert tracker.red_wins == 0
+    assert tracker.yellow_wins == 0
+
+    tracker.record_win(Player.RED)
+    assert tracker.red_wins == 1
+    assert tracker.yellow_wins == 0
+
+    tracker.record_win(Player.YELLOW)
+    tracker.record_win(Player.YELLOW)
+    assert tracker.red_wins == 1
+    assert tracker.yellow_wins == 2
+
+    # Recording win for EMPTY should not increment either score
+    tracker.record_win(Player.EMPTY)
+    assert tracker.red_wins == 1
+    assert tracker.yellow_wins == 2
+
+    tracker.reset()
+    assert tracker.red_wins == 0
+    assert tracker.yellow_wins == 0
+
+
 def test_key_to_column_mapping() -> None:
     # Standard top row numbers 1..7 -> cols 0..6
     for i in range(1, 8):
@@ -173,4 +197,5 @@ if __name__ == "__main__":
     test_ai_plays_as_red_takes_win()
     test_kids_plays_as_red_takes_win()
     test_key_to_column_mapping()
+    test_score_tracker()
     print("logic tests passed")

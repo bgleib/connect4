@@ -17,7 +17,7 @@ from constants import (
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
 )
-from game import Board, GameMode, MoveResult, Player
+from game import Board, GameMode, MoveResult, Player, ScoreTracker
 from renderer import Renderer, cell_center, column_from_x
 
 
@@ -110,6 +110,7 @@ def run() -> None:
     human_player = Player.RED
     ai_player = Player.YELLOW
     board = Board()
+    score_tracker = ScoreTracker()
     current = Player.RED
     hover_col: int | None = None
     menu_hover: str | None = None
@@ -134,6 +135,7 @@ def run() -> None:
 
     def select_mode(selected: GameMode) -> None:
         nonlocal mode, pending_mode, view
+        score_tracker.reset()
         if selected.vs_ai:
             pending_mode = selected
             view = Screen.ORDER_SELECT
@@ -168,6 +170,7 @@ def run() -> None:
                 if event.key == pygame.K_ESCAPE:
                     if view is Screen.ORDER_SELECT:
                         view = Screen.MENU
+                        score_tracker.reset()
                     else:
                         running = False
                 elif view is Screen.MENU and event.key in MENU_KEYS:
@@ -179,6 +182,7 @@ def run() -> None:
                         start_vs_ai(go_first=False)
                     elif event.key in (pygame.K_m, pygame.K_BACKSPACE):
                         view = Screen.MENU
+                        score_tracker.reset()
                 elif view is Screen.PLAY:
                     col = key_to_column(event.key)
                     if col is not None:
@@ -192,6 +196,7 @@ def run() -> None:
                         reset_match()
                     elif event.key == pygame.K_m:
                         view = Screen.MENU
+                        score_tracker.reset()
                         reset_match()
             elif event.type == pygame.MOUSEMOTION:
                 hover_col = column_from_x(event.pos[0])
@@ -261,6 +266,8 @@ def run() -> None:
                 if last_result is not None:
                     if last_result.is_win or last_result.is_draw:
                         game_over = True
+                        if last_result.is_win:
+                            score_tracker.record_win(last_result.player)
                     else:
                         current = current.opponent
                         ai_delay_ms = 0.0
@@ -276,6 +283,8 @@ def run() -> None:
             ai_label=mode.ai_label,
             thinking=thinking and animation is None,
             human_player=human_player,
+            red_wins=score_tracker.red_wins,
+            yellow_wins=score_tracker.yellow_wins,
         )
         renderer.draw_board(
             board=board,
