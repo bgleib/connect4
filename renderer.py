@@ -31,7 +31,7 @@ from constants import (
     YELLOW,
     YELLOW_DARK,
 )
-from game import Board, Player
+from game import Board, GameMode, Player
 
 
 def cell_center(row: int, col: int) -> tuple[int, int]:
@@ -79,13 +79,14 @@ class Renderer:
         winner: Player | None,
         ai_label: str | None,
         thinking: bool,
+        human_player: Player = Player.RED,
     ) -> None:
         title = self.title_font.render("Connect 4", True, WHITE)
         self.screen.blit(title, title.get_rect(midtop=(WINDOW_WIDTH // 2, 18)))
 
+        color = RED if current is Player.RED else YELLOW
         if thinking:
-            status = "Yellow is thinking..."
-            color = YELLOW
+            status = f"{current.label} ({ai_label}) is thinking..."
         elif game_over and winner is not None:
             status = f"{winner.label} wins"
             color = RED if winner is Player.RED else YELLOW
@@ -93,13 +94,13 @@ class Renderer:
             status = "Draw game"
             color = MUTED
         else:
-            if ai_label and current is Player.YELLOW:
-                status = f"Yellow ({ai_label})'s turn"
-            elif ai_label:
-                status = "Your turn (Red)"
+            if ai_label:
+                if current == human_player:
+                    status = f"Your turn ({current.label})"
+                else:
+                    status = f"{current.label} ({ai_label})'s turn"
             else:
                 status = f"{current.label}'s turn"
-            color = RED if current is Player.RED else YELLOW
 
         label = self.body_font.render(status, True, color)
         self.screen.blit(label, label.get_rect(center=(WINDOW_WIDTH // 2, 78)))
@@ -127,8 +128,8 @@ class Renderer:
             "multi": pygame.Rect(start_x + 2 * (card_w + gap), 240, card_w, card_h),
         }
         copy = {
-            "kids": ("Kids", "You are Red", "Gentle Yellow AI"),
-            "classic": ("Classic", "You are Red", "Tactical Yellow AI"),
+            "kids": ("Kids", "Gentle AI", "Choose turn order"),
+            "classic": ("Classic", "Tactical AI", "Choose turn order"),
             "multi": ("Two Players", "Red vs Yellow", "Hot-seat on one PC"),
         }
 
@@ -148,6 +149,47 @@ class Renderer:
             self.screen.blit(detail2, detail2.get_rect(center=(rect.centerx, rect.y + 150)))
 
         footer = self.small_font.render("Click a mode or press 1 / 2 / 3", True, MUTED)
+        self.screen.blit(footer, footer.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 48)))
+        return buttons
+
+    def draw_order_menu(
+        self,
+        mode: GameMode | None,
+        hover_key: str | None,
+    ) -> dict[str, pygame.Rect]:
+        mode_title = mode.ai_label if mode and mode.ai_label else "Single Player"
+        title = self.title_font.render(f"{mode_title} Mode", True, WHITE)
+        self.screen.blit(title, title.get_rect(center=(WINDOW_WIDTH // 2, 86)))
+        subtitle = self.body_font.render("Do you want to go first or second?", True, MUTED)
+        self.screen.blit(subtitle, subtitle.get_rect(center=(WINDOW_WIDTH // 2, 132)))
+
+        card_w, card_h, gap = 240, 180, 24
+        total_w = 2 * card_w + gap
+        start_x = (WINDOW_WIDTH - total_w) // 2
+        buttons = {
+            "first": pygame.Rect(start_x, 240, card_w, card_h),
+            "second": pygame.Rect(start_x + card_w + gap, 240, card_w, card_h),
+        }
+        copy = {
+            "first": ("Go First", "Play as Red", "You take the 1st turn", RED),
+            "second": ("Go Second", "Play as Yellow", "AI takes the 1st turn", YELLOW),
+        }
+
+        for key, rect in buttons.items():
+            hovered = hover_key == key
+            fill = BOARD_BLUE if hovered else BOARD_BLUE_DARK
+            pygame.draw.rect(self.screen, fill, rect, border_radius=22)
+            pygame.draw.rect(self.screen, GOLD if hovered else MUTED, rect, width=2, border_radius=22)
+            heading, line1, line2, disc_color = copy[key]
+            heading_surf = self.body_font.render(heading, True, WHITE)
+            self.screen.blit(heading_surf, heading_surf.get_rect(center=(rect.centerx, rect.y + 48)))
+            pygame.draw.circle(self.screen, disc_color, (rect.centerx, rect.y + 92), 18)
+            detail1 = self.small_font.render(line1, True, MUTED)
+            detail2 = self.small_font.render(line2, True, MUTED)
+            self.screen.blit(detail1, detail1.get_rect(center=(rect.centerx, rect.y + 128)))
+            self.screen.blit(detail2, detail2.get_rect(center=(rect.centerx, rect.y + 150)))
+
+        footer = self.small_font.render("Click an option or press 1 / 2  ·  Esc to back", True, MUTED)
         self.screen.blit(footer, footer.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 48)))
         return buttons
 

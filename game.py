@@ -9,6 +9,24 @@ from typing import Iterable
 from constants import COLS, ROWS
 
 
+class GameMode(IntEnum):
+    KIDS = 1
+    CLASSIC = 2
+    TWO_PLAYER = 3
+
+    @property
+    def vs_ai(self) -> bool:
+        return self is not GameMode.TWO_PLAYER
+
+    @property
+    def ai_label(self) -> str | None:
+        if self is GameMode.KIDS:
+            return "Kids AI"
+        if self is GameMode.CLASSIC:
+            return "AI"
+        return None
+
+
 class Player(IntEnum):
     EMPTY = 0
     RED = 1

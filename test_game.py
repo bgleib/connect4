@@ -118,6 +118,28 @@ def test_kids_notices_horizontal_block() -> None:
     assert choose_column_kids(board, Player.YELLOW, rng=_AlwaysNotice()) == 3
 
 
+def test_ai_plays_as_red_takes_win() -> None:
+    board = Board()
+    board.drop(0, Player.RED)
+    board.drop(6, Player.YELLOW)
+    board.drop(1, Player.RED)
+    board.drop(6, Player.YELLOW)
+    board.drop(2, Player.RED)
+    board.drop(5, Player.YELLOW)
+    assert choose_column(board, Player.RED, depth=4) == 3
+
+
+def test_kids_plays_as_red_takes_win() -> None:
+    board = Board()
+    board.drop(0, Player.RED)
+    board.drop(6, Player.YELLOW)
+    board.drop(1, Player.RED)
+    board.drop(6, Player.YELLOW)
+    board.drop(2, Player.RED)
+    board.drop(5, Player.YELLOW)
+    assert choose_column_kids(board, Player.RED, rng=_AlwaysNotice()) == 3
+
+
 if __name__ == "__main__":
     test_horizontal_win()
     test_vertical_win()
@@ -128,4 +150,6 @@ if __name__ == "__main__":
     test_kids_always_legal()
     test_kids_notices_immediate_win()
     test_kids_notices_horizontal_block()
+    test_ai_plays_as_red_takes_win()
+    test_kids_plays_as_red_takes_win()
     print("logic tests passed")
