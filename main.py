@@ -17,7 +17,7 @@ from constants import (
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
 )
-from game import Board, MoveResult, Player
+from game import Board, GameMode, MoveResult, Player
 from renderer import Renderer, cell_center, column_from_x
 
 
