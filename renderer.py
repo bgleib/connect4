@@ -80,9 +80,21 @@ class Renderer:
         ai_label: str | None,
         thinking: bool,
         human_player: Player = Player.RED,
+        red_wins: int = 0,
+        yellow_wins: int = 0,
     ) -> None:
         title = self.title_font.render("Connect 4", True, WHITE)
-        self.screen.blit(title, title.get_rect(midtop=(WINDOW_WIDTH // 2, 18)))
+        self.screen.blit(title, title.get_rect(midtop=(WINDOW_WIDTH // 2, 14)))
+
+        red_score_surf = self.body_font.render(f"Red: {red_wins}", True, WHITE)
+        red_rect = red_score_surf.get_rect(midleft=(52, 32))
+        pygame.draw.circle(self.screen, RED, (36, 32), 10)
+        self.screen.blit(red_score_surf, red_rect)
+
+        yellow_score_surf = self.body_font.render(f"Yellow: {yellow_wins}", True, WHITE)
+        yellow_rect = yellow_score_surf.get_rect(midright=(WINDOW_WIDTH - 52, 32))
+        pygame.draw.circle(self.screen, YELLOW, (WINDOW_WIDTH - 36, 32), 10)
+        self.screen.blit(yellow_score_surf, yellow_rect)
 
         color = RED if current is Player.RED else YELLOW
         if thinking:

@@ -59,6 +59,22 @@ class MoveResult:
 
 
 @dataclass
+class ScoreTracker:
+    red_wins: int = 0
+    yellow_wins: int = 0
+
+    def record_win(self, winner: Player) -> None:
+        if winner is Player.RED:
+            self.red_wins += 1
+        elif winner is Player.YELLOW:
+            self.yellow_wins += 1
+
+    def reset(self) -> None:
+        self.red_wins = 0
+        self.yellow_wins = 0
+
+
+@dataclass
 class Board:
     rows: int = ROWS
     cols: int = COLS
