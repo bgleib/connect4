@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect 4</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #0a0e1a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      color: #f4f7ff;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    canvas {
+      display: block;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+      border-radius: 16px;
+      max-width: 98vw;
+      max-height: 98vh;
+      object-fit: contain;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="720" height="812"></canvas>
+
+  <script>
+    // Constants
+    const ROWS = 6;
+    const COLS = 7;
+    const CELL_SIZE = 96;
+    const BOARD_PADDING = 24;
+    const HEADER_HEIGHT = 140;
+    const FOOTER_HEIGHT = 72;
+
+    const BOARD_WIDTH = COLS * CELL_SIZE;
+    const BOARD_HEIGHT = ROWS * CELL_SIZE;
+    const WINDOW_WIDTH = BOARD_WIDTH + BOARD_PADDING * 2; // 720
+    const WINDOW_HEIGHT = HEADER_HEIGHT + BOARD_HEIGHT + FOOTER_HEIGHT + BOARD_PADDING; // 812
+
+    const DISC_RADIUS = 38;
+    const HOLE_RADIUS = 42;
+
+    const DROP_DURATION_MS = 420;
+    const WIN_PULSE_MS = 900;
+    const AI_DEPTH = 5;
+    const AI_THINK_DELAY_MS = 220;
+
+    const KIDS_TAKE_WIN = 0.80;
+    const KIDS_BLOCK_HORIZONTAL = 0.75;
+    const KIDS_BLOCK_VERTICAL = 0.75;
+    const KIDS_BLOCK_DIAGONAL = 0.60;
+
+    // Palette
+    const BG_TOP = [12, 18, 38];
+    const BG_BOTTOM = [22, 32, 62];
+    const BOARD_BLUE = 'rgb(28, 86, 196)';
+    const BOARD_BLUE_DARK = 'rgb(18, 58, 142)';
+    const HOLE_COLOR = 'rgb(10, 16, 34)';
+    const RED = 'rgb(230, 57, 70)';
+    const RED_DARK = 'rgb(168, 28, 42)';
+    const RED_RGB = [230, 57, 70];
+    const RED_DARK_RGB = [168, 28, 42];
+    const YELLOW = 'rgb(255, 209, 64)';
+    const YELLOW_DARK = 'rgb(201, 148, 18)';
+    const YELLOW_RGB = [255, 209, 64];
+    const YELLOW_DARK_RGB = [201, 148, 18];
+    const WHITE = '#f4f7ff';
+    const MUTED = '#a8b4d6';
+    const GOLD = '#ffd666';
+    const OVERLAY = 'rgba(8, 12, 28, 0.667)';
+
+    // Enums & Helpers
+    const GameMode = {
+      KIDS: 1,
+      CLASSIC: 2,
+      TWO_PLAYER: 3
+    };
+
+    function modeVsAi(mode) {
+      return mode !== GameMode.TWO_PLAYER;
+    }
+
+    function modeAiLabel(mode) {
+      if (mode === GameMode.KIDS) return 'Kids AI';
+      if (mode === GameMode.CLASSIC) return 'AI';
+      return null;
+    }
+
+    const Player = {
+      EMPTY: 0,
+      RED: 1,
+      YELLOW: 2
+    };
+
+    function playerOpponent(player) {
+      if (player === Player.RED) return Player.YELLOW;
+      if (player === Player.YELLOW) return Player.RED;
+      return Player.EMPTY;
+    }
+
+    function playerLabel(player) {
+      if (player === Player.RED) return 'Red';
+      if (player === Player.YELLOW) return 'Yellow';
+      return 'None';
+    }
+
+    const Screen = {
+      MENU: 'MENU',
+      ORDER_SELECT: 'ORDER_SELECT',
+      PLAY: 'PLAY'
+    };
+
+    class ScoreTracker {
+      constructor() {
+        this.red_wins = 0;
+        this.yellow_wins = 0;
+      }
+
+      record_win(winner) {
+        if (winner === Player.RED) this.red_wins++;
+        else if (winner === Player.YELLOW) this.yellow_wins++;
+      }
+
+      reset() {
+        this.red_wins = 0;
+        this.yellow_wins = 0;
+      }
+    }
+
+    class Board {
+      constructor(rows = ROWS, cols = COLS) {
+        this.rows = rows;
+        this.cols = cols;
+        this.grid = [];
+        this.reset();
+      }
+
+      reset() {
+        this.grid = Array.from({ length: this.rows }, () => Array(this.cols).fill(Player.EMPTY));
+      }
+
+      clone() {
+        const copy = new Board(this.rows, this.cols);
+        copy.grid = this.grid.map(row => [...row]);
+        return copy;
+      }
+
+      valid_columns() {
+        const valid = [];
+        for (let col = 0; col < this.cols; col++) {
+          if (this.is_column_open(col)) valid.push(col);
+        }
+        return valid;
+      }
+
+      is_column_open(col) {
+        return col >= 0 && col < this.cols && this.grid[0][col] === Player.EMPTY;
+      }
+
+      undo(row, col) {
+        this.grid[row][col] = Player.EMPTY;
+      }
+
+      next_open_row(col) {
+        if (col < 0 || col >= this.cols) return null;
+        for (let row = this.rows - 1; row >= 0; row--) {
+          if (this.grid[row][col] === Player.EMPTY) {
+            return row;
+          }
+        }
+        return null;
+      }
+
+      drop(col, player) {
+        const row = this.next_open_row(col);
+        if (row === null) return null;
+        this.grid[row][col] = player;
+        const winning = this.winning_line(row, col, player);
+        const is_draw = winning.length === 0 && this.is_full();
+        return {
+          row,
+          col,
+          player,
+          winning_cells: winning,
+          is_draw,
+          is_win: winning.length > 0
+        };
+      }
+
+      is_full() {
+        for (let col = 0; col < this.cols; col++) {
+          if (this.grid[0][col] === Player.EMPTY) return false;
+        }
+        return true;
+      }
+
+      winning_line(row, col, player) {
+        const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+        for (const dir of directions) {
+          const line = this._line_from(row, col, player, dir);
+          if (line.length >= 4) {
+            return line;
+          }
+        }
+        return [];
+      }
+
+      _line_from(row, col, player, [dr, dc]) {
+        const cells = [[row, col]];
+        this._ray(row, col, player, dr, dc, cells);
+        this._ray(row, col, player, -dr, -dc, cells);
+        cells.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        return cells;
+      }
+
+      _ray(row, col, player, dr, dc, cells) {
+        let r = row + dr;
+        let c = col + dc;
+        while (r >= 0 && r < this.rows && c >= 0 && c < this.cols && this.grid[r][c] === player) {
+          cells.push([r, c]);
+          r += dr;
+          c += dc;
+        }
+      }
+    }
+
+    // AI Logic
+    const CENTER_COLUMN = Math.floor(COLS / 2);
+    const COLUMN_ORDER = Array.from({ length: COLS }, (_, col) => col)
+      .sort((a, b) => Math.abs(a - CENTER_COLUMN) - Math.abs(b - CENTER_COLUMN));
+
+    const WIN_SCORE = 1000000;
+
+    function choose_column(board, player = Player.YELLOW, depth = AI_DEPTH) {
+      const valid = COLUMN_ORDER.filter(col => board.is_column_open(col));
+      if (valid.length === 0) {
+        throw new Error("No legal moves remain");
+      }
+
+      let best_col = valid[0];
+      let best_score = -WIN_SCORE * 10;
+      let alpha = -WIN_SCORE * 10;
+      let beta = WIN_SCORE * 10;
+
+      for (const col of valid) {
+        const row = board.next_open_row(col);
+        if (row === null) continue;
+        const result = board.drop(col, player);
+        if (!result) continue;
+
+        let score = 0;
+        if (result.is_win) {
+          score = WIN_SCORE;
+        } else if (result.is_draw) {
+          score = 0;
+        } else {
+          score = _minimax(board, depth - 1, alpha, beta, false, player);
+        }
+
+        board.undo(result.row, result.col);
+
+        if (score > best_score) {
+          best_score = score;
+          best_col = col;
+        }
+        alpha = Math.max(alpha, best_score);
+      }
+      return best_col;
+    }
+
+    function _minimax(board, depth, alpha, beta, maximizing, ai_player) {
+      const human = playerOpponent(ai_player);
+      const valid = COLUMN_ORDER.filter(col => board.is_column_open(col));
+      if (valid.length === 0) return 0;
+      if (depth === 0) return evaluate(board, ai_player);
+
+      if (maximizing) {
+        let value = -WIN_SCORE * 10;
+        for (const col of valid) {
+          const result = board.drop(col, ai_player);
+          if (!result) continue;
+
+          let score = 0;
+          if (result.is_win) {
+            score = WIN_SCORE + depth;
+          } else if (result.is_draw) {
+            score = 0;
+          } else {
+            score = _minimax(board, depth - 1, alpha, beta, false, ai_player);
+          }
+          board.undo(result.row, result.col);
+
+          value = Math.max(value, score);
+          alpha = Math.max(alpha, value);
+          if (alpha >= beta) break;
+        }
+        return value;
+      } else {
+        let value = WIN_SCORE * 10;
+        for (const col of valid) {
+          const result = board.drop(col, human);
+          if (!result) continue;
+
+          let score = 0;
+          if (result.is_win) {
+            score = -WIN_SCORE - depth;
+          } else if (result.is_draw) {
+            score = 0;
+          } else {
+            score = _minimax(board, depth - 1, alpha, beta, true, ai_player);
+          }
+          board.undo(result.row, result.col);
+
+          value = Math.min(value, score);
+          beta = Math.min(beta, value);
+          if (alpha >= beta) break;
+        }
+        return value;
+      }
+    }
+
+    function evaluate(board, ai_player) {
+      const human = playerOpponent(ai_player);
+      let score = 0;
+
+      let center_count = 0;
+      for (let row = 0; row < ROWS; row++) {
+        if (board.grid[row][CENTER_COLUMN] === ai_player) {
+          center_count++;
+        }
+      }
+      score += center_count * 6;
+
+      const windows = _windows(board);
+      for (const window of windows) {
+        score += _score_window(window, ai_player, human);
+      }
+      return score;
+    }
+
+    function _windows(board) {
+      const windows = [];
+      const grid = board.grid;
+
+      for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS - 3; col++) {
+          windows.push([grid[row][col], grid[row][col + 1], grid[row][col + 2], grid[row][col + 3]]);
+        }
+      }
+
+      for (let col = 0; col < COLS; col++) {
+        for (let row = 0; row < ROWS - 3; row++) {
+          windows.push([grid[row][col], grid[row + 1][col], grid[row + 2][col], grid[row + 3][col]]);
+        }
+      }
+
+      for (let row = 0; row < ROWS - 3; row++) {
+        for (let col = 0; col < COLS - 3; col++) {
+          windows.push([grid[row][col], grid[row + 1][col + 1], grid[row + 2][col + 2], grid[row + 3][col + 3]]);
+          windows.push([grid[row + 3][col], grid[row + 2][col + 1], grid[row + 1][col + 2], grid[row][col + 3]]);
+        }
+      }
+
+      return windows;
+    }
+
+    function _score_window(window, ai_player, human) {
+      let ai_count = 0;
+      let human_count = 0;
+      let empty = 0;
+
+      for (const p of window) {
+        if (p === ai_player) ai_count++;
+        else if (p === human) human_count++;
+        else empty++;
+      }
+
+      if (ai_count === 4) return 1000;
+      if (human_count === 4) return -1000;
+      if (ai_count === 3 && empty === 1) return 80;
+      if (human_count === 3 && empty === 1) return -90;
+      if (ai_count === 2 && empty === 2) return 12;
+      if (human_count === 2 && empty === 2) return -10;
+      return 0;
+    }
+
+    // Kids AI
+    const BLOCK_CHANCE = {
+      horizontal: KIDS_BLOCK_HORIZONTAL,
+      vertical: KIDS_BLOCK_VERTICAL,
+      diagonal: KIDS_BLOCK_DIAGONAL
+    };
+
+    const BLOCK_PRIORITY = {
+      horizontal: 0,
+      vertical: 1,
+      diagonal: 2
+    };
+
+    function choose_column_kids(board, player = Player.YELLOW, rng = Math.random) {
+      const valid = board.valid_columns();
+      if (valid.length === 0) {
+        throw new Error("No legal moves remain");
+      }
+
+      const wins = _immediate_wins(board, player);
+      if (wins.length > 0 && rng() < KIDS_TAKE_WIN) {
+        const choiceIndex = Math.floor(rng() * wins.length);
+        return wins[choiceIndex];
+      }
+
+      const threats = _immediate_threats(board, playerOpponent(player));
+      threats.sort((a, b) => BLOCK_PRIORITY[a.kind] - BLOCK_PRIORITY[b.kind]);
+
+      for (const threat of threats) {
+        if (rng() < BLOCK_CHANCE[threat.kind]) {
+          return threat.col;
+        }
+      }
+
+      return _weighted_play(board, player, valid, rng);
+    }
+
+    function _immediate_wins(board, player) {
+      const columns = [];
+      for (const col of board.valid_columns()) {
+        const result = board.drop(col, player);
+        if (result) {
+          if (result.is_win) {
+            columns.push(col);
+          }
+          board.undo(result.row, result.col);
+        }
+      }
+      return columns;
+    }
+
+    function _immediate_threats(board, opponent) {
+      const threats = [];
+      for (const col of board.valid_columns()) {
+        const result = board.drop(col, opponent);
+        if (result) {
+          if (result.is_win) {
+            threats.push({ col, kind: _line_kind(result.winning_cells) });
+          }
+          board.undo(result.row, result.col);
+        }
+      }
+      return threats;
+    }
+
+    function _line_kind(cells) {
+      const rows = new Set(cells.map(c => c[0]));
+      const cols = new Set(cells.map(c => c[1]));
+      if (rows.size === 1) return 'horizontal';
+      if (cols.size === 1) return 'vertical';
+      return 'diagonal';
+    }
+
+    function _weighted_play(board, player, valid, rng) {
+      const weights = valid.map(col => _column_weight(board, player, col));
+      const total = weights.reduce((a, b) => a + b, 0);
+      const pick = rng() * total;
+      let acc = 0.0;
+      for (let i = 0; i < valid.length; i++) {
+        acc += weights[i];
+        if (pick <= acc) {
+          return valid[i];
+        }
+      }
+      return valid[valid.length - 1];
+    }
+
+    function _column_weight(board, player, col) {
+      const row = board.next_open_row(col);
+      if (row === null) return 0.01;
+      let weight = 1.0 + 3.0 * (1.0 - Math.abs(col - CENTER_COLUMN) / CENTER_COLUMN);
+      if (row < ROWS - 1) {
+        weight += 2.0;
+      }
+      const result = board.drop(col, player);
+      if (result) {
+        let twos = 0;
+        for (const window of _windows(board)) {
+          let aiCount = 0;
+          let emptyCount = 0;
+          for (const cell of window) {
+            if (cell === player) aiCount++;
+            else if (cell === Player.EMPTY) emptyCount++;
+          }
+          if (aiCount === 2 && emptyCount === 2) twos++;
+        }
+        weight += twos * 0.35;
+        board.undo(result.row, result.col);
+      }
+      return Math.max(weight, 0.05);
+    }
+
+    // Layout & Rendering Helpers
+    function cell_center(row, col) {
+      const x = BOARD_PADDING + col * CELL_SIZE + CELL_SIZE / 2;
+      const y = HEADER_HEIGHT + row * CELL_SIZE + CELL_SIZE / 2;
+      return [x, y];
+    }
+
+    function column_from_x(x) {
+      const local = x - BOARD_PADDING;
+      if (local < 0 || local >= COLS * CELL_SIZE) {
+        return null;
+      }
+      return Math.floor(local / CELL_SIZE);
+    }
+
+    function lerp_color(startRGB, endRGB, t) {
+      t = Math.max(0.0, Math.min(1.0, t));
+      return [
+        Math.round(startRGB[0] + (endRGB[0] - startRGB[0]) * t),
+        Math.round(startRGB[1] + (endRGB[1] - startRGB[1]) * t),
+        Math.round(startRGB[2] + (endRGB[2] - startRGB[2]) * t)
+      ];
+    }
+
+    function drawRoundRect(ctx, x, y, width, height, radius, fillStyle, strokeStyle = null, strokeWidth = 1) {
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, width, height, radius);
+      } else {
+        ctx.rect(x, y, width, height);
+      }
+      if (fillStyle) {
+        ctx.fillStyle = fillStyle;
+        ctx.fill();
+      }
+      if (strokeStyle) {
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = strokeWidth;
+        ctx.stroke();
+      }
+    }
+
+    class Renderer {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+      }
+
+      draw_background() {
+        const grad = this.ctx.createLinearGradient(0, 0, 0, WINDOW_HEIGHT);
+        grad.addColorStop(0, `rgb(${BG_TOP.join(',')})`);
+        grad.addColorStop(1, `rgb(${BG_BOTTOM.join(',')})`);
+        this.ctx.fillStyle = grad;
+        this.ctx.fillRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+      }
+
+      draw_header(current, game_over, winner, ai_label, thinking, human_player = Player.RED, red_wins = 0, yellow_wins = 0) {
+        const ctx = this.ctx;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Title
+        ctx.font = "bold 36px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = WHITE;
+        ctx.fillText("Connect 4", WINDOW_WIDTH / 2, 32);
+
+        // Scores
+        ctx.font = "22px 'Segoe UI', system-ui, sans-serif";
+
+        // Red score
+        ctx.fillStyle = RED;
+        ctx.beginPath();
+        ctx.arc(36, 32, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.textAlign = 'left';
+        ctx.fillStyle = WHITE;
+        ctx.fillText(`Red: ${red_wins}`, 54, 32);
+
+        // Yellow score
+        ctx.fillStyle = YELLOW;
+        ctx.beginPath();
+        ctx.arc(WINDOW_WIDTH - 36, 32, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = WHITE;
+        ctx.fillText(`Yellow: ${yellow_wins}`, WINDOW_WIDTH - 54, 32);
+
+        // Status text
+        let status = '';
+        let color = current === Player.RED ? RED : YELLOW;
+
+        if (thinking) {
+          status = `${playerLabel(current)} (${ai_label}) is thinking...`;
+        } else if (game_over && winner !== null) {
+          status = `${playerLabel(winner)} wins`;
+          color = winner === Player.RED ? RED : YELLOW;
+        } else if (game_over) {
+          status = "Draw game";
+          color = MUTED;
+        } else {
+          if (ai_label) {
+            if (current === human_player) {
+              status = `Your turn (${playerLabel(current)})`;
+            } else {
+              status = `${playerLabel(current)} (${ai_label})'s turn`;
+            }
+          } else {
+            status = `${playerLabel(current)}'s turn`;
+          }
+        }
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = color;
+        ctx.fillText(status, WINDOW_WIDTH / 2, 78);
+
+        // Turn indicator circles
+        if (!game_over) {
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(WINDOW_WIDTH / 2 - 150, 78, 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(WINDOW_WIDTH / 2 + 150, 78, 10, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Hint text
+        ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = MUTED;
+        ctx.fillText("Click or press 1-7  ·  R replay  ·  M menu  ·  Esc quit", WINDOW_WIDTH / 2, 108);
+      }
+
+      draw_menu(hover_key) {
+        const ctx = this.ctx;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        ctx.font = "bold 36px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = WHITE;
+        ctx.fillText("Connect 4", WINDOW_WIDTH / 2, 86);
+
+        ctx.font = "22px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = MUTED;
+        ctx.fillText("Choose how you want to play", WINDOW_WIDTH / 2, 132);
+
+        const card_w = 196, card_h = 180, gap = 16;
+        const total_w = 3 * card_w + 2 * gap;
+        const start_x = (WINDOW_WIDTH - total_w) / 2;
+
+        const buttons = {
+          kids: { x: start_x, y: 240, w: card_w, h: card_h },
+          classic: { x: start_x + card_w + gap, y: 240, w: card_w, h: card_h },
+          multi: { x: start_x + 2 * (card_w + gap), y: 240, w: card_w, h: card_h }
+        };
+
+        const copy = {
+          kids: ["Kids", "Gentle AI", "Choose turn order"],
+          classic: ["Classic", "Tactical AI", "Choose turn order"],
+          multi: ["Two Players", "Red vs Yellow", "Hot-seat on one PC"]
+        };
+
+        for (const [key, rect] of Object.entries(buttons)) {
+          const hovered = hover_key === key;
+          const fill = hovered ? BOARD_BLUE : BOARD_BLUE_DARK;
+          const stroke = hovered ? GOLD : MUTED;
+
+          drawRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 22, fill, stroke, 2);
+
+          const [heading, line1, line2] = copy[key];
+
+          ctx.font = "22px 'Segoe UI', system-ui, sans-serif";
+          ctx.fillStyle = WHITE;
+          ctx.fillText(heading, rect.x + rect.w / 2, rect.y + 48);
+
+          // Circles
+          ctx.fillStyle = RED;
+          ctx.beginPath();
+          ctx.arc(rect.x + rect.w / 2 - 16, rect.y + 92, 16, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = YELLOW;
+          ctx.beginPath();
+          ctx.arc(rect.x + rect.w / 2 + 16, rect.y + 92, 16, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+          ctx.fillStyle = MUTED;
+          ctx.fillText(line1, rect.x + rect.w / 2, rect.y + 128);
+          ctx.fillText(line2, rect.x + rect.w / 2, rect.y + 150);
+        }
+
+        ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = MUTED;
+        ctx.fillText("Click a mode or press 1 / 2 / 3", WINDOW_WIDTH / 2, WINDOW_HEIGHT - 48);
+
+        return buttons;
+      }
+
+      draw_order_menu(mode, hover_key) {
+        const ctx = this.ctx;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const mode_title = modeAiLabel(mode) || "Single Player";
+        ctx.font = "bold 36px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = WHITE;
+        ctx.fillText(`${mode_title} Mode`, WINDOW_WIDTH / 2, 86);
+
+        ctx.font = "22px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = MUTED;
+        ctx.fillText("Do you want to go first or second?", WINDOW_WIDTH / 2, 132);
+
+        const card_w = 240, card_h = 180, gap = 24;
+        const total_w = 2 * card_w + gap;
+        const start_x = (WINDOW_WIDTH - total_w) / 2;
+
+        const buttons = {
+          first: { x: start_x, y: 240, w: card_w, h: card_h },
+          second: { x: start_x + card_w + gap, y: 240, w: card_w, h: card_h }
+        };
+
+        const copy = {
+          first: ["Go First", "Play as Red", "You take the 1st turn", RED],
+          second: ["Go Second", "Play as Yellow", "AI takes the 1st turn", YELLOW]
+        };
+
+        for (const [key, rect] of Object.entries(buttons)) {
+          const hovered = hover_key === key;
+          const fill = hovered ? BOARD_BLUE : BOARD_BLUE_DARK;
+          const stroke = hovered ? GOLD : MUTED;
+
+          drawRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 22, fill, stroke, 2);
+
+          const [heading, line1, line2, disc_color] = copy[key];
+
+          ctx.font = "22px 'Segoe UI', system-ui, sans-serif";
+          ctx.fillStyle = WHITE;
+          ctx.fillText(heading, rect.x + rect.w / 2, rect.y + 48);
+
+          ctx.fillStyle = disc_color;
+          ctx.beginPath();
+          ctx.arc(rect.x + rect.w / 2, rect.y + 92, 18, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+          ctx.fillStyle = MUTED;
+          ctx.fillText(line1, rect.x + rect.w / 2, rect.y + 128);
+          ctx.fillText(line2, rect.x + rect.w / 2, rect.y + 150);
+        }
+
+        ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = MUTED;
+        ctx.fillText("Click an option or press 1 / 2  ·  Esc to back", WINDOW_WIDTH / 2, WINDOW_HEIGHT - 48);
+
+        return buttons;
+      }
+
+      draw_board(board, hover_col, current, animating, winning_cells, pulse) {
+        const ctx = this.ctx;
+
+        const board_x = BOARD_PADDING - 12;
+        const board_y = HEADER_HEIGHT - 12;
+        const board_w = COLS * CELL_SIZE + 24;
+        const board_h = ROWS * CELL_SIZE + 24;
+
+        // Board shadow / frame
+        drawRoundRect(ctx, board_x, board_y, board_w, board_h, 28, BOARD_BLUE_DARK);
+        drawRoundRect(ctx, board_x + 5, board_y + 5, board_w - 10, board_h - 10, 22, BOARD_BLUE);
+
+        // Column numbers
+        ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = MUTED;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let col = 0; col < COLS; col++) {
+          const col_x = BOARD_PADDING + col * CELL_SIZE + CELL_SIZE / 2;
+          ctx.fillText(String(col + 1), col_x, HEADER_HEIGHT - 18);
+        }
+
+        // Hover preview
+        const landing_row = (hover_col !== null && !animating) ? board.next_open_row(hover_col) : null;
+        if (hover_col !== null && landing_row !== null) {
+          const center = cell_center(landing_row, hover_col);
+          this._draw_disc(center, current, 0.275);
+        }
+
+        // Holes and Discs
+        const win_map = new Set(winning_cells.map(c => `${c[0]},${c[1]}`));
+
+        for (let row = 0; row < ROWS; row++) {
+          for (let col = 0; col < COLS; col++) {
+            const center = cell_center(row, col);
+
+            // Hole cutout
+            ctx.fillStyle = HOLE_COLOR;
+            ctx.beginPath();
+            ctx.arc(center[0], center[1], HOLE_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+
+            const occupant = board.grid[row][col];
+            if (occupant !== Player.EMPTY) {
+              let glow = 1.0;
+              if (win_map.has(`${row},${col}`)) {
+                glow = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(pulse * Math.PI * 2));
+              }
+              this._draw_disc(center, occupant, 1.0, glow);
+            }
+          }
+        }
+      }
+
+      draw_dropping_disc(col, y, player) {
+        const x = BOARD_PADDING + col * CELL_SIZE + CELL_SIZE / 2;
+        this._draw_disc([x, y], player);
+      }
+
+      draw_overlay(winner) {
+        const ctx = this.ctx;
+        const banner_x = 36;
+        const banner_y = WINDOW_HEIGHT - 64;
+        const banner_w = WINDOW_WIDTH - 72;
+        const banner_h = 48;
+
+        drawRoundRect(ctx, banner_x, banner_y, banner_w, banner_h, 12, OVERLAY, GOLD, 1);
+
+        const message = winner === null ? "Draw — R replay  ·  M menu" : `${playerLabel(winner)} connects 4!  R replay  ·  M menu`;
+        const color = winner === null ? MUTED : (winner === Player.RED ? RED : YELLOW);
+
+        ctx.font = "22px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(message, banner_x + banner_w / 2, banner_y + banner_h / 2);
+      }
+
+      _draw_disc(center, player, alpha = 1.0, glow = 1.0) {
+        const ctx = this.ctx;
+        const isRed = player === Player.RED;
+        const fillRGB = isRed ? RED_RGB : YELLOW_RGB;
+        const darkRGB = isRed ? RED_DARK_RGB : YELLOW_DARK_RGB;
+
+        const lerpedFill = lerp_color(darkRGB, fillRGB, glow);
+        const fillStyle = `rgb(${lerpedFill.join(',')})`;
+        const shadeStyle = `rgb(${darkRGB.join(',')})`;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Outer base/shade circle
+        ctx.fillStyle = shadeStyle;
+        ctx.beginPath();
+        ctx.arc(center[0], center[1], DISC_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner fill circle (offset for 3D look)
+        ctx.fillStyle = fillStyle;
+        ctx.beginPath();
+        ctx.arc(center[0] - 3, center[1] - 3, DISC_RADIUS - 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White highlight circle
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha === 1.0 ? 0.35 : 0.15})`;
+        ctx.beginPath();
+        ctx.arc(center[0] - 12, center[1] - 14, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Glow / Win border ring
+        if (glow !== 1.0) {
+          ctx.strokeStyle = GOLD;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(center[0], center[1], DISC_RADIUS + 3, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+    }
+
+    // Drop Animation & Main App
+    function ease_out_cubic(t) {
+      t = Math.max(0.0, Math.min(1.0, t));
+      return 1.0 - Math.pow(1.0 - t, 3);
+    }
+
+    class DropAnimation {
+      constructor(col, target_row, player) {
+        this.col = col;
+        this.target_row = target_row;
+        this.player = player;
+        this.start_y = HEADER_HEIGHT - 36;
+        this.end_y = cell_center(target_row, col)[1];
+        this.elapsed_ms = 0.0;
+      }
+
+      advance(dt_ms) {
+        this.elapsed_ms += dt_ms;
+        const t = ease_out_cubic(this.elapsed_ms / DROP_DURATION_MS);
+        return this.start_y + (this.end_y - this.start_y) * t;
+      }
+
+      done() {
+        return this.elapsed_ms >= DROP_DURATION_MS;
+      }
+    }
+
+    function start_drop(board, col, player) {
+      const row = board.next_open_row(col);
+      if (row === null) return null;
+      return new DropAnimation(col, row, player);
+    }
+
+    // App Initialization
+    const canvas = document.getElementById('gameCanvas');
+    const renderer = new Renderer(canvas);
+
+    let view = Screen.MENU;
+    let mode = GameMode.TWO_PLAYER;
+    let pending_mode = null;
+    let human_player = Player.RED;
+    let ai_player = Player.YELLOW;
+    const board = new Board();
+    const score_tracker = new ScoreTracker();
+    let current = Player.RED;
+    let hover_col = null;
+    let menu_hover = null;
+    let order_hover = null;
+    let animation = null;
+    let last_result = null;
+    let game_over = false;
+    let ai_delay_ms = 0.0;
+    let pulse_ms = 0.0;
+
+    let menu_buttons = {};
+    let order_buttons = {};
+
+    function reset_match() {
+      board.reset();
+      current = Player.RED;
+      animation = null;
+      last_result = null;
+      game_over = false;
+      ai_delay_ms = 0.0;
+    }
+
+    function select_mode(selected) {
+      score_tracker.reset();
+      if (modeVsAi(selected)) {
+        pending_mode = selected;
+        view = Screen.ORDER_SELECT;
+      } else {
+        mode = selected;
+        view = Screen.PLAY;
+        reset_match();
+      }
+    }
+
+    function start_vs_ai(go_first) {
+      if (!pending_mode) return;
+      mode = pending_mode;
+      if (go_first) {
+        human_player = Player.RED;
+        ai_player = Player.YELLOW;
+      } else {
+        human_player = Player.YELLOW;
+        ai_player = Player.RED;
+      }
+      view = Screen.PLAY;
+      reset_match();
+    }
+
+    function pointInRect(px, py, rect) {
+      return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
+    }
+
+    function getCanvasCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return [
+        (e.clientX - rect.left) * scaleX,
+        (e.clientY - rect.top) * scaleY
+      ];
+    }
+
+    // Input Events
+    window.addEventListener('mousemove', (e) => {
+      const [mx, my] = getCanvasCoords(e);
+
+      if (view === Screen.MENU) {
+        menu_hover = null;
+        for (const [key, rect] of Object.entries(menu_buttons)) {
+          if (pointInRect(mx, my, rect)) {
+            menu_hover = key;
+            break;
+          }
+        }
+      } else if (view === Screen.ORDER_SELECT) {
+        order_hover = null;
+        for (const [key, rect] of Object.entries(order_buttons)) {
+          if (pointInRect(mx, my, rect)) {
+            order_hover = key;
+            break;
+          }
+        }
+      } else if (view === Screen.PLAY) {
+        hover_col = column_from_x(mx);
+      }
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      hover_col = null;
+      menu_hover = null;
+      order_hover = null;
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // Left click only
+      const [mx, my] = getCanvasCoords(e);
+
+      if (view === Screen.MENU) {
+        for (const [key, rect] of Object.entries(menu_buttons)) {
+          if (pointInRect(mx, my, rect)) {
+            if (key === 'kids') select_mode(GameMode.KIDS);
+            else if (key === 'classic') select_mode(GameMode.CLASSIC);
+            else if (key === 'multi') select_mode(GameMode.TWO_PLAYER);
+            break;
+          }
+        }
+      } else if (view === Screen.ORDER_SELECT) {
+        for (const [key, rect] of Object.entries(order_buttons)) {
+          if (pointInRect(mx, my, rect)) {
+            if (key === 'first') start_vs_ai(true);
+            else if (key === 'second') start_vs_ai(false);
+            break;
+          }
+        }
+      } else if (view === Screen.PLAY) {
+        if (animation === null && !game_over && !(modeVsAi(mode) && current === ai_player)) {
+          const col = column_from_x(mx);
+          if (col !== null) {
+            animation = start_drop(board, col, current);
+          }
+        }
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      const key = e.key;
+
+      if (key === 'Escape') {
+        if (view === Screen.ORDER_SELECT) {
+          view = Screen.MENU;
+          score_tracker.reset();
+        } else if (view === Screen.PLAY) {
+          view = Screen.MENU;
+          score_tracker.reset();
+          reset_match();
+        }
+        return;
+      }
+
+      if (view === Screen.MENU) {
+        if (key === '1') select_mode(GameMode.KIDS);
+        else if (key === '2') select_mode(GameMode.CLASSIC);
+        else if (key === '3') select_mode(GameMode.TWO_PLAYER);
+      } else if (view === Screen.ORDER_SELECT) {
+        if (key === '1') start_vs_ai(true);
+        else if (key === '2') start_vs_ai(false);
+        else if (key === 'm' || key === 'M' || key === 'Backspace') {
+          view = Screen.MENU;
+          score_tracker.reset();
+        }
+      } else if (view === Screen.PLAY) {
+        let col = null;
+        if (key >= '1' && key <= '7') {
+          col = parseInt(key, 10) - 1;
+        } else if (e.code && e.code.startsWith('Numpad')) {
+          const num = parseInt(e.code.replace('Numpad', ''), 10);
+          if (num >= 1 && num <= 7) col = num - 1;
+        }
+
+        if (col !== null) {
+          if (animation === null && !game_over && !(modeVsAi(mode) && current === ai_player)) {
+            animation = start_drop(board, col, current);
+          }
+        } else if (key === 'r' || key === 'R') {
+          reset_match();
+        } else if (key === 'm' || key === 'M') {
+          view = Screen.MENU;
+          score_tracker.reset();
+          reset_match();
+        }
+      }
+    });
+
+    // Game Loop
+    let last_time = performance.now();
+
+    function loop(now) {
+      const dt_ms = Math.min(now - last_time, 100);
+      last_time = now;
+
+      pulse_ms = (pulse_ms + dt_ms) % WIN_PULSE_MS;
+      const pulse = pulse_ms / WIN_PULSE_MS;
+
+      if (view === Screen.MENU) {
+        renderer.draw_background();
+        menu_buttons = renderer.draw_menu(menu_hover);
+      } else if (view === Screen.ORDER_SELECT) {
+        renderer.draw_background();
+        order_buttons = renderer.draw_order_menu(pending_mode, order_hover);
+      } else if (view === Screen.PLAY) {
+        const thinking = modeVsAi(mode) && current === ai_player && animation === null && !game_over;
+        if (thinking) {
+          ai_delay_ms += dt_ms;
+          if (ai_delay_ms >= AI_THINK_DELAY_MS) {
+            let ai_col;
+            if (mode === GameMode.KIDS) {
+              ai_col = choose_column_kids(board, ai_player);
+            } else {
+              ai_col = choose_column(board, ai_player);
+            }
+            animation = start_drop(board, ai_col, ai_player);
+            ai_delay_ms = 0.0;
+          }
+        }
+
+        let drop_y = null;
+        if (animation !== null) {
+          drop_y = animation.advance(dt_ms);
+          if (animation.done()) {
+            last_result = board.drop(animation.col, animation.player);
+            if (last_result !== null) {
+              if (last_result.is_win || last_result.is_draw) {
+                game_over = true;
+                if (last_result.is_win) {
+                  score_tracker.record_win(last_result.player);
+                }
+              } else {
+                current = playerOpponent(current);
+                ai_delay_ms = 0.0;
+              }
+            }
+            animation = null;
+            drop_y = null;
+          }
+        }
+
+        const human_turn = !(modeVsAi(mode) && current === ai_player);
+
+        renderer.draw_background();
+        renderer.draw_header(
+          (last_result && last_result.is_win) ? last_result.player : current,
+          game_over,
+          (last_result && last_result.is_win) ? last_result.player : null,
+          modeAiLabel(mode),
+          thinking && animation === null,
+          human_player,
+          score_tracker.red_wins,
+          score_tracker.yellow_wins
+        );
+
+        renderer.draw_board(
+          board,
+          (animation || game_over || !human_turn) ? null : hover_col,
+          current,
+          animation !== null,
+          (last_result && last_result.winning_cells) ? last_result.winning_cells : [],
+          pulse
+        );
+
+        if (animation !== null && drop_y !== null) {
+          renderer.draw_dropping_disc(animation.col, drop_y, animation.player);
+        }
+
+        if (game_over && animation === null) {
+          renderer.draw_overlay((last_result && last_result.is_win) ? last_result.player : null);
+        }
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
