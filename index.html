@@ -891,6 +891,93 @@
       }
     }
 
+    // Audio Manager (Web Audio API)
+    let audioCtx = null;
+
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtx = new AudioContextClass();
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    window.addEventListener('click', () => { getAudioContext(); });
+    window.addEventListener('keydown', () => { getAudioContext(); });
+
+    function playWinSound() {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+      const notes = [
+        { freq: 523.25, time: 0.0, duration: 0.10 },
+        { freq: 659.25, time: 0.10, duration: 0.10 },
+        { freq: 783.99, time: 0.20, duration: 0.10 },
+        { freq: 1046.50, time: 0.30, duration: 0.40 }
+      ];
+
+      notes.forEach(note => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(note.freq, now + note.time);
+
+        const startTime = now + note.time;
+        const endTime = startTime + note.duration;
+
+        gain.gain.setValueAtTime(0.3, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, endTime);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(startTime);
+        osc.stop(endTime);
+      });
+    }
+
+    function playLoseSound() {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+      const notes = [
+        { startFreq: 311.13, endFreq: 311.13, time: 0.0, duration: 0.22 },
+        { startFreq: 293.66, endFreq: 293.66, time: 0.24, duration: 0.22 },
+        { startFreq: 277.18, endFreq: 277.18, time: 0.48, duration: 0.22 },
+        { startFreq: 261.63, endFreq: 190.00, time: 0.72, duration: 0.60 }
+      ];
+
+      notes.forEach(note => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sawtooth';
+
+        const startTime = now + note.time;
+        const endTime = startTime + note.duration;
+
+        osc.frequency.setValueAtTime(note.startFreq, startTime);
+        osc.frequency.linearRampToValueAtTime(note.endFreq, endTime);
+
+        gain.gain.setValueAtTime(0.18, startTime);
+        gain.gain.linearRampToValueAtTime(0.001, endTime);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(startTime);
+        osc.stop(endTime);
+      });
+    }
+
     // Drop Animation & Main App
     function ease_out_cubic(t) {
       t = Math.max(0.0, Math.min(1.0, t));
@@ -1150,6 +1237,13 @@
                 game_over = true;
                 if (last_result.is_win) {
                   score_tracker.record_win(last_result.player);
+                  if (modeVsAi(mode)) {
+                    if (last_result.player === human_player) {
+                      playWinSound();
+                    } else {
+                      playLoseSound();
+                    }
+                  }
                 }
               } else {
                 current = playerOpponent(current);

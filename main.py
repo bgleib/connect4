@@ -17,6 +17,7 @@ from constants import (
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
 )
+from audio import SoundManager
 from game import Board, GameMode, MoveResult, Player, ScoreTracker
 from renderer import Renderer, cell_center, column_from_x
 
@@ -103,6 +104,7 @@ def run() -> None:
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     clock = pygame.time.Clock()
     renderer = Renderer(screen)
+    sound_mgr = SoundManager()
 
     view = Screen.MENU
     mode = GameMode.TWO_PLAYER
@@ -268,6 +270,11 @@ def run() -> None:
                         game_over = True
                         if last_result.is_win:
                             score_tracker.record_win(last_result.player)
+                            if mode.vs_ai:
+                                if last_result.player == human_player:
+                                    sound_mgr.play_win()
+                                else:
+                                    sound_mgr.play_lose()
                     else:
                         current = current.opponent
                         ai_delay_ms = 0.0

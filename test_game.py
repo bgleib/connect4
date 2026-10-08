@@ -5,6 +5,7 @@ import random
 import pygame
 
 from ai import choose_column, choose_column_kids
+from audio import SoundManager
 from game import Board, Player, ScoreTracker
 from main import key_to_column
 
@@ -143,6 +144,13 @@ def test_kids_plays_as_red_takes_win() -> None:
     assert choose_column_kids(board, Player.RED, rng=_AlwaysNotice()) == 3
 
 
+def test_sound_manager() -> None:
+    sm = SoundManager()
+    # Should not raise any exceptions even if audio driver is present or dummy
+    sm.play_win()
+    sm.play_lose()
+
+
 def test_score_tracker() -> None:
     tracker = ScoreTracker()
     assert tracker.red_wins == 0
@@ -198,4 +206,5 @@ if __name__ == "__main__":
     test_kids_plays_as_red_takes_win()
     test_key_to_column_mapping()
     test_score_tracker()
+    test_sound_manager()
     print("logic tests passed")
