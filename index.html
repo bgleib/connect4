@@ -639,9 +639,63 @@
         }
 
         // Hint text
-        ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+        ctx.font = "15px 'Segoe UI', system-ui, sans-serif";
         ctx.fillStyle = MUTED;
-        ctx.fillText("Click or press 1-7  ·  R replay  ·  M menu  ·  Esc quit", WINDOW_WIDTH / 2, 108);
+        ctx.fillText("Click column or tap below controls  ·  1-7 drop", WINDOW_WIDTH / 2, 108);
+      }
+
+      draw_play_controls(hover_key) {
+        const ctx = this.ctx;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const btn_w = 160, btn_h = 46;
+        const y = WINDOW_HEIGHT - FOOTER_HEIGHT + (FOOTER_HEIGHT - btn_h) / 2; // y = 812 - 72 + 13 = 753
+        const gap = 32;
+        const total_w = 2 * btn_w + gap;
+        const start_x = (WINDOW_WIDTH - total_w) / 2;
+
+        const buttons = {
+          restart: { x: start_x, y: y, w: btn_w, h: btn_h },
+          menu: { x: start_x + btn_w + gap, y: y, w: btn_w, h: btn_h }
+        };
+
+        const restart_hovered = hover_key === 'restart';
+        const menu_hovered = hover_key === 'menu';
+
+        // Restart button
+        drawRoundRect(
+          ctx,
+          buttons.restart.x,
+          buttons.restart.y,
+          buttons.restart.w,
+          buttons.restart.h,
+          14,
+          restart_hovered ? BOARD_BLUE : BOARD_BLUE_DARK,
+          restart_hovered ? GOLD : MUTED,
+          2
+        );
+        ctx.font = "bold 17px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = WHITE;
+        ctx.fillText("↻ Restart", buttons.restart.x + buttons.restart.w / 2, buttons.restart.y + buttons.restart.h / 2);
+
+        // Menu button
+        drawRoundRect(
+          ctx,
+          buttons.menu.x,
+          buttons.menu.y,
+          buttons.menu.w,
+          buttons.menu.h,
+          14,
+          menu_hovered ? BOARD_BLUE : BOARD_BLUE_DARK,
+          menu_hovered ? GOLD : MUTED,
+          2
+        );
+        ctx.font = "bold 17px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = WHITE;
+        ctx.fillText("≡ Main Menu", buttons.menu.x + buttons.menu.w / 2, buttons.menu.y + buttons.menu.h / 2);
+
+        return buttons;
       }
 
       draw_menu(hover_key) {
@@ -762,6 +816,19 @@
           ctx.fillText(line2, rect.x + rect.w / 2, rect.y + 150);
         }
 
+        // Back to Menu Button
+        const back_btn = { x: (WINDOW_WIDTH - 200) / 2, y: 480, w: 200, h: 50 };
+        const back_hovered = hover_key === 'back';
+        const back_fill = back_hovered ? BOARD_BLUE : BOARD_BLUE_DARK;
+        const back_stroke = back_hovered ? GOLD : MUTED;
+
+        drawRoundRect(ctx, back_btn.x, back_btn.y, back_btn.w, back_btn.h, 14, back_fill, back_stroke, 2);
+        ctx.font = "bold 18px 'Segoe UI', system-ui, sans-serif";
+        ctx.fillStyle = WHITE;
+        ctx.fillText("← Main Menu", back_btn.x + back_btn.w / 2, back_btn.y + back_btn.h / 2);
+
+        buttons.back = back_btn;
+
         ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
         ctx.fillStyle = MUTED;
         ctx.fillText("Click an option or press 1 / 2  ·  Esc to back", WINDOW_WIDTH / 2, WINDOW_HEIGHT - 48);
@@ -830,17 +897,17 @@
 
       draw_overlay(winner) {
         const ctx = this.ctx;
-        const banner_x = 36;
-        const banner_y = WINDOW_HEIGHT - 64;
-        const banner_w = WINDOW_WIDTH - 72;
-        const banner_h = 48;
+        const banner_w = WINDOW_WIDTH - 96;
+        const banner_h = 52;
+        const banner_x = (WINDOW_WIDTH - banner_w) / 2;
+        const banner_y = 660;
 
-        drawRoundRect(ctx, banner_x, banner_y, banner_w, banner_h, 12, OVERLAY, GOLD, 1);
+        drawRoundRect(ctx, banner_x, banner_y, banner_w, banner_h, 16, OVERLAY, GOLD, 2);
 
-        const message = winner === null ? "Draw — R replay  ·  M menu" : `${playerLabel(winner)} connects 4!  R replay  ·  M menu`;
+        const message = winner === null ? "Draw Game!" : `${playerLabel(winner)} connects 4!`;
         const color = winner === null ? MUTED : (winner === Player.RED ? RED : YELLOW);
 
-        ctx.font = "22px 'Segoe UI', system-ui, sans-serif";
+        ctx.font = "bold 24px 'Segoe UI', system-ui, sans-serif";
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1026,6 +1093,7 @@
     let hover_col = null;
     let menu_hover = null;
     let order_hover = null;
+    let play_hover = null;
     let animation = null;
     let last_result = null;
     let game_over = false;
@@ -1034,6 +1102,7 @@
 
     let menu_buttons = {};
     let order_buttons = {};
+    let play_buttons = {};
 
     function reset_match() {
       board.reset();
@@ -1105,6 +1174,13 @@
           }
         }
       } else if (view === Screen.PLAY) {
+        play_hover = null;
+        for (const [key, rect] of Object.entries(play_buttons)) {
+          if (pointInRect(mx, my, rect)) {
+            play_hover = key;
+            break;
+          }
+        }
         hover_col = column_from_x(mx);
       }
     });
@@ -1113,6 +1189,7 @@
       hover_col = null;
       menu_hover = null;
       order_hover = null;
+      play_hover = null;
     });
 
     canvas.addEventListener('mousedown', (e) => {
@@ -1133,11 +1210,31 @@
           if (pointInRect(mx, my, rect)) {
             if (key === 'first') start_vs_ai(true);
             else if (key === 'second') start_vs_ai(false);
+            else if (key === 'back') {
+              view = Screen.MENU;
+              score_tracker.reset();
+            }
             break;
           }
         }
       } else if (view === Screen.PLAY) {
-        if (animation === null && !game_over && !(modeVsAi(mode) && current === ai_player)) {
+        let action_taken = false;
+        for (const [key, rect] of Object.entries(play_buttons)) {
+          if (pointInRect(mx, my, rect)) {
+            if (key === 'restart') {
+              reset_match();
+              action_taken = true;
+            } else if (key === 'menu') {
+              view = Screen.MENU;
+              score_tracker.reset();
+              reset_match();
+              action_taken = true;
+            }
+            break;
+          }
+        }
+
+        if (!action_taken && animation === null && !game_over && !(modeVsAi(mode) && current === ai_player)) {
           const col = column_from_x(mx);
           if (col !== null) {
             animation = start_drop(board, col, current);
@@ -1285,6 +1382,8 @@
         if (game_over && animation === null) {
           renderer.draw_overlay((last_result && last_result.is_win) ? last_result.player : null);
         }
+
+        play_buttons = renderer.draw_play_controls(play_hover);
       }
 
       requestAnimationFrame(loop);
