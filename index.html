@@ -62,6 +62,7 @@
     const KIDS_BLOCK_HORIZONTAL = 0.75;
     const KIDS_BLOCK_VERTICAL = 0.75;
     const KIDS_BLOCK_DIAGONAL = 0.60;
+    const KIDS_ALWAYS_BLOCK_MOVES = 4;
 
     // Palette
     const BG_TOP = [12, 18, 38];
@@ -422,11 +423,21 @@
         return wins[choiceIndex];
       }
 
-      const threats = _immediate_threats(board, playerOpponent(player));
+      const opponent = playerOpponent(player);
+      const threats = _immediate_threats(board, opponent);
       threats.sort((a, b) => BLOCK_PRIORITY[a.kind] - BLOCK_PRIORITY[b.kind]);
 
+      let opponent_moves = 0;
+      for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+          if (board.grid[row][col] === opponent) {
+            opponent_moves++;
+          }
+        }
+      }
+
       for (const threat of threats) {
-        if (rng() < BLOCK_CHANCE[threat.kind]) {
+        if (opponent_moves < KIDS_ALWAYS_BLOCK_MOVES || rng() < BLOCK_CHANCE[threat.kind]) {
           return threat.col;
         }
       }

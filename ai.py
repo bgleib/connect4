@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from constants import (
     AI_DEPTH,
     COLS,
+    KIDS_ALWAYS_BLOCK_MOVES,
     KIDS_BLOCK_DIAGONAL,
     KIDS_BLOCK_HORIZONTAL,
     KIDS_BLOCK_VERTICAL,
@@ -68,10 +69,12 @@ def choose_column_kids(
     if wins and rng.random() < KIDS_TAKE_WIN:
         return rng.choice(wins)
 
-    threats = _immediate_threats(board, player.opponent)
+    opponent = player.opponent
+    threats = _immediate_threats(board, opponent)
     threats.sort(key=lambda item: _BLOCK_PRIORITY[item[1]])
+    opponent_moves = sum(row.count(opponent) for row in board.grid)
     for col, kind in threats:
-        if rng.random() < _BLOCK_CHANCE[kind]:
+        if opponent_moves < KIDS_ALWAYS_BLOCK_MOVES or rng.random() < _BLOCK_CHANCE[kind]:
             return col
 
     return _weighted_play(board, player, valid, rng)
