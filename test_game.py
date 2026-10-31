@@ -83,6 +83,14 @@ class _AlwaysNotice:
         return seq[0]
 
 
+class _NeverNotice:
+    def random(self) -> float:
+        return 0.999
+
+    def choice(self, seq: list[int]) -> int:
+        return seq[0]
+
+
 def _horizontal_yellow_win_board() -> Board:
     board = Board()
     board.drop(0, Player.YELLOW)
@@ -120,6 +128,38 @@ def test_kids_notices_immediate_win() -> None:
 def test_kids_notices_horizontal_block() -> None:
     board = _horizontal_red_threat_board()
     assert choose_column_kids(board, Player.YELLOW, rng=_AlwaysNotice()) == 3
+
+
+def test_kids_always_blocks_before_threshold() -> None:
+    # When human has fewer than 4 moves (here 3 moves: cols 0, 1, 2), AI must block with 100% chance,
+    # even with an RNG that never blocks under normal probabilities.
+    board = _horizontal_red_threat_board()
+    assert sum(row.count(Player.RED) for row in board.grid) == 3
+    assert choose_column_kids(board, Player.YELLOW, rng=_NeverNotice()) == 3
+
+
+def test_kids_can_forget_to_block_after_threshold() -> None:
+    # When human has >= 4 moves, the RNG check applies.
+    # Set up a board where Red has 4 moves and threatens a horizontal win at col 3.
+    board = Board()
+    # 4 Red moves: cols 0, 1, 2, and 6
+    board.drop(0, Player.RED)
+    board.drop(0, Player.YELLOW)
+    board.drop(1, Player.RED)
+    board.drop(1, Player.YELLOW)
+    board.drop(2, Player.RED)
+    board.drop(2, Player.YELLOW)
+    board.drop(6, Player.RED)
+    board.drop(6, Player.YELLOW)
+    assert sum(row.count(Player.RED) for row in board.grid) == 4
+    # Red has threat at col 3 (row 5: cols 0, 1, 2).
+    # With _NeverNotice (rng.random() = 0.999 > 0.75), Kids AI should not block at col 3.
+    choice = choose_column_kids(board, Player.YELLOW, rng=_NeverNotice())
+    assert choice != 3
+
+    # With _AlwaysNotice, Kids AI does block at col 3.
+    choice_block = choose_column_kids(board, Player.YELLOW, rng=_AlwaysNotice())
+    assert choice_block == 3
 
 
 def test_ai_plays_as_red_takes_win() -> None:
@@ -202,6 +242,8 @@ if __name__ == "__main__":
     test_kids_always_legal()
     test_kids_notices_immediate_win()
     test_kids_notices_horizontal_block()
+    test_kids_always_blocks_before_threshold()
+    test_kids_can_forget_to_block_after_threshold()
     test_ai_plays_as_red_takes_win()
     test_kids_plays_as_red_takes_win()
     test_key_to_column_mapping()

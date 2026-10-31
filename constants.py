@@ -29,6 +29,7 @@ KIDS_TAKE_WIN: Final[float] = 0.80
 KIDS_BLOCK_HORIZONTAL: Final[float] = 0.75
 KIDS_BLOCK_VERTICAL: Final[float] = 0.75
 KIDS_BLOCK_DIAGONAL: Final[float] = 0.60
+KIDS_ALWAYS_BLOCK_MOVES: Final[int] = 4
 
 # Palette
 BG_TOP: Final[tuple[int, int, int]] = (12, 18, 38)
